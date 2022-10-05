@@ -9,6 +9,7 @@
 using namespace sf;
 using namespace std;
 
+//function to take in score and check if positive or negative
 bool checkScore(int score) {
     if (score >= 0) {
         return false;
@@ -18,8 +19,9 @@ bool checkScore(int score) {
     }
 
 }
-void SetDigitMap(int score, map<int, Sprite>& digit, vector<Sprite>& digitOptions) {
-    digit.clear();
+//function to take in score, display vector and resource vector to set display vector to curr score
+void SetDigitMap(int score, vector<Sprite>& digitDisplay, vector<Sprite>& digitOptions) {
+    digitDisplay.clear();
     int digs[3];
     bool sign = checkScore(score);
     int shift = 0;
@@ -39,44 +41,46 @@ void SetDigitMap(int score, map<int, Sprite>& digit, vector<Sprite>& digitOption
             digs[1] = digs[1] % 10;
         }
         digs[2] = score * -1 % 10;
-        digit.emplace(0, digitOptions.at(10));
+        digitDisplay.push_back(digitOptions.at(10));
     }
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 10; j++) {
             if (digs[i] == j) {
-                digit.emplace(i + shift, digitOptions[i]);
+                digitDisplay.push_back(digitOptions[digs[i]]);
             }
         }
     }
 }
+//point class to hold a location of a tile in cartesian coordinates (x,y)
 class Point {
 public:
     int x;
     int y;
 };
+//tile class to hold tile status and functions to change the tiles
 class Tile {
 public:
+    //constructor to initialize tile from coordinates
     Tile(int x, int y) {
         coordinates.x = x;
         coordinates.y = y;
         Reset();
-        state_sprite.setPosition((x) * 32, (y) * 32);
-        num_sprite.setPosition((x) * 32, (y) * 32);
-        bounds = state_sprite.getGlobalBounds();
+        bg_sprite.setPosition((x) * 32, (y) * 32);
+        fg_sprite.setPosition((x) * 32, (y) * 32);
+        bounds = bg_sprite.getGlobalBounds();
     }
-    Point GetLocation() {
-        return coordinates;
-    }
+    //reset to return all class variables to default
     void Reset() {
         number = 0;
         is_flagged = false;
         is_revealed = false;
         is_mine = false;
         adj_mine = false;
-        state_sprite.setTexture(TextureManager::GetTexture("tile_hidden"));
-        num_sprite.setTexture(TextureManager::GetTexture("tile_hidden"));
+        bg_sprite.setTexture(TextureManager::GetTexture("tile_hidden"));
+        fg_sprite.setTexture(TextureManager::GetTexture("tile_hidden"));
         CheckAdjacents();
     }
+    //setters
     void SetAdjacent(Tile* neighbor) {
         if (!(find(adjacents.begin(), adjacents.end(), neighbor) != adjacents.end())) {
             adjacents.push_back(neighbor);
@@ -85,28 +89,38 @@ public:
             }
         }
     }
-    void SetNumber() {
-        num_sprite.setTexture(TextureManager::GetTexture("number_"+to_string(number)));
+    void SetFG() {
+        if (number != 0) {
+            fg_sprite.setTexture(TextureManager::GetTexture("number_" + to_string(number)));
+        }
+        else {
+            fg_sprite.setTexture(TextureManager::GetTexture("tile_revealed"));
+        }
+    }
+    void SetBG() {
+        bg_sprite.setTexture(TextureManager::GetTexture("tile_revealed"));
     }
     void SetMine() {
         is_mine = true;
+        bg_sprite.setTexture(TextureManager::GetTexture("mine"));
     }
-    bool IsARevealed() {
-        return is_revealed;
-    }
-    void IsRightClicked() {
+    //actions
+    void RightClick() {
         if (!is_flagged) {
             is_flagged = true;
+            fg_sprite.setTexture(TextureManager::GetTexture("flag"));
         }
         else {
             is_flagged = false;
+            fg_sprite.setTexture(TextureManager::GetTexture("tile_hidden"));
         }
     }
     int RevealTile(Tile& tile, int& curr_revealed) {
         if (!is_revealed && !is_mine && !is_flagged) {
-            state_sprite.setTexture(TextureManager::GetTexture("tile_revealed"));
+            bg_sprite.setTexture(TextureManager::GetTexture("tile_revealed"));
             is_revealed = true;
-            SetNumber();
+            SetFG();
+            SetBG();
             curr_revealed++;
             if (!adj_mine){
                 for (int i = 0; i < adjacents.size(); i++) {
@@ -116,11 +130,23 @@ public:
             return 0;
         }
         else if (!is_revealed && !is_flagged) {
-            state_sprite.setTexture(TextureManager::GetTexture("tile_revealed"));
+            bg_sprite.setTexture(TextureManager::GetTexture("tile_revealed"));
             is_revealed = true;
-            num_sprite.setTexture(TextureManager::GetTexture("mine"));
+            fg_sprite.setTexture(TextureManager::GetTexture("mine"));
             return 1;
         }
+    }
+    bool checkBounds(sf::Vector2i mousePos) {
+        if (bounds.contains(mousePos.x, mousePos.y)) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+    //getters
+    bool IsARevealed() {
+        return is_revealed;
     }
     bool IsAFlagged() {
         return is_flagged;
@@ -131,15 +157,21 @@ public:
     void CheckAdjacents() {
         for (int i = 0; i < adjacents.size(); i++) {
             if (adjacents[i]->is_mine) {
+                cout << GetLocation().x << ", " << GetLocation().y << endl;
+                cout << adjacents[i]->GetLocation().x << ", " << adjacents[i]->GetLocation().y << endl << endl;;
                 number++;
+                adj_mine = true;
             }
         }
     }
-    Sprite GetStateSprite() {
-        return state_sprite;
+    Point GetLocation() {
+        return coordinates;
     }
-    Sprite GetNumSprite() {
-        return num_sprite;
+    Sprite GetBGSprite() {
+        return bg_sprite;
+    }
+    Sprite GetFGSprite() {
+        return fg_sprite;
     }
 private:
     int number;
@@ -149,12 +181,14 @@ private:
     bool is_mine;
     bool is_revealed;
     bool adj_mine;
-    Sprite state_sprite;
-    Sprite num_sprite;
+    Sprite fg_sprite;
+    Sprite bg_sprite;
     FloatRect bounds;
 };
+//board class to hold tile vector and other properties of a board: dimensions, mines
 class Board {
 public:
+    //board ctor reads infile, uses to set dimensions, creates a tile vector and reset class vars
     Board() {
         inFile.open("boards/config.cfg");
         ReadFile();
@@ -162,6 +196,7 @@ public:
         CreateTiles();
         Reset();
     }
+    //getters
     int Get_Cols() {
         return num_cols;
     }
@@ -179,8 +214,11 @@ public:
         }
     }
     vector<Tile>& Get_Board() { return board; }
+    //reset board to plain state
     void Reset() {
         curr_mines = 0;
+        num_revealed = 0;
+        num_hidden = num_cols * num_rows - num_mines;
         for (int i = 0; i < board.size(); i++) {
             board.at(i).Reset();
         }
@@ -191,45 +229,47 @@ public:
                 curr_mines++;
             }
         } 
+        SetAdjacents();
     }
+    //push back tiles with given locations within rows and cols
     void CreateTiles() {
-        for (int i = 0; i < num_cols; i++) {
-            for (int j = 0; j < num_rows; j++) {
-                board.push_back(Tile(i, j)); // will have number 0, all specials false, hidden texture
+        for (int i = 0; i < num_rows; i++) {
+            for (int j = 0; j < num_cols; j++) {
+                board.push_back(Tile(j, i)); // will have number 0, all specials false, hidden texture
             }
         }
     }
+    //setter
     void SetAdjacents() {
         for (int i = 0; i < board.size(); i++) {
-            for (int j = (i - num_cols - 1); j < (i - num_cols + 1); j++) {
-                if (j > 0 && j < board.size() && (board.at(i).GetLocation().y == board.at(i).GetLocation().y + 1)) {
+            for (int j = (i - num_cols - 1); j <= (i - num_cols + 1); j++) {
+                if (j >= 0 && j < board.size() && (board.at(i).GetLocation().y == board.at(j).GetLocation().y + 1)) {
                     board.at(i).SetAdjacent(&board.at(j));
                 }
             }
-            for (int j = (i - 1); j < (i + 1); j += 2) {
-                if (j > 0 && (board.at(i).GetLocation().x == board.at(i).GetLocation().x)) {
+            for (int j = (i - 1); j <= (i + 1); j += 2) {
+                if (j >= 0 && j < board.size() && (board.at(i).GetLocation().y == board.at(j).GetLocation().y)) {
                     board.at(i).SetAdjacent(&board.at(j));
                 }
             }
-            for (int j = (i + num_cols - 1); j < (i + num_cols + 1); j++) {
-                if (j > 0 && j < board.size() && (board.at(i).GetLocation().y == board.at(i).GetLocation().y - 1)) {
+            for (int j = (i + num_cols - 1); j <= (i + num_cols + 1); j++) {
+                if (j >= 0 && j < board.size() && (board.at(i).GetLocation().y == board.at(j).GetLocation().y - 1)) {
                     board.at(i).SetAdjacent(&board.at(j));
                 }
             }
         }
     }
-    void UpdateTile(int action[], int size) {https://draftlol.dawe.gg/T_cAvtlI
-        for (int i = 0; i < size; i++) {
-            if (action[i] == 1) {
-                board[i].RevealTile(board[i], size); // change size to actual variable later
-            }
+    //function to update tile at an index
+    void UpdateTile(int index, bool& leftClicked, bool& mine, bool& reveal) {
+        if (leftClicked) {
+            mine = board[index].RevealTile(board[index], num_revealed); // mine becomes 1 when a mine is revealed
         }
-    }
-    void UpdateTile(int index, bool& mine, bool& reveal) {
-         mine = board[index].RevealTile(board[index], num_revealed); // mine becomes 1 when a mine is revealed
-         if ((num_rows * num_cols) - num_revealed == num_mines) {
+        else {
+            board[index].RightClick();
+        }
+        if ((num_rows * num_cols) - num_revealed == num_mines) {
              reveal = true;
-         }
+        }
     }
 private:
     int curr_mines;
@@ -239,7 +279,6 @@ private:
     int num_revealed;
     int num_hidden;
     ifstream inFile;
-    vector<int> playState;
     vector<Tile> board;
     void ReadFile() {
         string s1, s2, s3;
@@ -251,8 +290,10 @@ private:
         num_mines = stoi(s3);
     }
 };
+//minesweeper class is the game object, callable by a main process (for later use in an AI implementation)
 class Minesweeper {
 public:
+    //ctor capable of UI handling and variable resets
     Minesweeper() {
         game_board = Board();
         width = game_board.Get_Cols() * 32;
@@ -269,45 +310,40 @@ public:
                 if (event.type == Event::Closed) {
                     window.close();
                 }
+                bool leftClick;
                 if (event.type == sf::Event::MouseButtonPressed) {
                     if (event.mouseButton.button == sf::Mouse::Left) {
+                        leftClick = true;
                         sf::Vector2i mousePos = sf::Mouse::getPosition(window);
                         if (faceBounds.contains(mousePos.x, mousePos.y)) {
                             Reset();
                         }
                     }
-                    else if (!mine_pressed && !all_revealed) {
-                        for (int i = 0; i < game_board.Get_Board().size(); i++) {
-                            game_board.UpdateTile(i, mine_pressed, all_revealed);
+                    if (event.mouseButton.button == sf::Mouse::Right) {
+                        leftClick = false;
+                    }
+                    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+                    for (int i = 0; i < game_board.Get_Board().size(); i++) {
+                        if (game_board.Get_Board()[i].checkBounds(mousePos)) {
+                            game_board.UpdateTile(i, leftClick, mine_pressed, all_revealed);
                         }
                     }
                 }
             }
                 sf::Vector2i mousePos = sf::Mouse::getPosition(window);
                 window.clear(Color::White);
-                for (int i = 0; i < game_board.Get_Cols(); i++) {
-                    for (int j = 0; j < game_board.Get_Rows(); j++) {
-                        window.draw(game_board.Get_Tile(i, j).GetStateSprite());
+                for (int i = 0; i < game_board.Get_Rows(); i++) {
+                    for (int j = 0; j < game_board.Get_Cols(); j++) {
+                        window.draw(game_board.Get_Tile(j, i).GetBGSprite());
+                        window.draw(game_board.Get_Tile(j, i).GetFGSprite());
                     }  
                 }
-                /*auto iter = flags.begin();
-                for (; iter != flags.end(); iter++) {
-                    window.draw(iter->second);
-                }
-                */
                 for (int i = 0; i < mines.size(); i++) {
                     window.draw(mines.at(i));
                 }
-                /*
-                auto iter2 = numbers.begin();
-                for (; iter2 != numbers.end(); iter2++) {
-                    window.draw(iter2->second);
-                }
-                */
-                auto iter3 = digitCount.begin();
-                for (; iter3 != digitCount.end(); iter3++) {
-                    iter3->second.setPosition(21 * iter3->first, game_board.Get_Rows() * 32);
-                    window.draw(iter3->second);
+                for (int i = 0; i  < digitDisplay.size(); i++) {
+                    digitDisplay[i].setPosition(21 * i, game_board.Get_Rows() * 32);
+                    window.draw(digitDisplay[i]);
                 }
                 window.draw(face);
                 //window.draw(debug);
@@ -327,7 +363,7 @@ public:
         all_revealed = false;
         game_board.Reset();
         score = game_board.Get_Mines();
-        SetDigitMap(score, digitCount, digitDisplay);
+        SetDigitMap(score, digitDisplay, digitOptions);
     }
 private:
     bool sign;
@@ -344,15 +380,14 @@ private:
     bool isDebugMode;
     ifstream inFile;
     vector<Sprite> mines;
-    vector<Sprite>digitDisplay;
+    vector<Sprite>digitOptions;
     map<int, Sprite> numbers;
     map<int, Sprite> flags;
-    map<int, Sprite> digitCount;
+    vector<Sprite>digitDisplay;
     vector<int> unrevealed;
     Sprite face, debug, mine, flag;
     Sprite digits[12];
     Sprite numbers_textures[8];
-    Sprite digitSign;
     Board game_board;
     RenderWindow window;
     //FloatRect debugBounds;
@@ -362,7 +397,7 @@ private:
             numbers_textures[i].setTexture(TextureManager::GetTexture("number_" + to_string(i + 1)));
         }
     }
-    void LoadDigits() { // digitDisplay idx 0-9 is 0-9, 10 is sign
+    void LoadDigits() { // digitOptions idx 0-9 is 0-9, 10 is sign
         for (int i = 0; i < 11; i++) {
             digits[i].setTexture(TextureManager::GetTexture("digits"));
         }
@@ -371,7 +406,7 @@ private:
             digits[i].setTextureRect(IntRect((i - 1) * 21, 0, 21, 32));
         }
         for (int i = 1; i < 11; i++) {
-            digitDisplay.push_back(digits[i]);
+            digitOptions.push_back(digits[i]);
         }
     }
     void LoadAll() {
